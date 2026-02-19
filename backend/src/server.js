@@ -107,12 +107,13 @@ io.on('connection', (socket) => {
     });
 });
 
-// Start server
+// Start server (only if not in Vercel serverless environment)
 const PORT = process.env.PORT || 5000;
 const WEBSOCKET_PORT = process.env.WEBSOCKET_PORT || 5001;
 
-server.listen(PORT, () => {
-    logger.info(`
+if (process.env.VERCEL !== '1') {
+    server.listen(PORT, () => {
+        logger.info(`
 ╔════════════════════════════════════════════════════════════╗
 ║   Drone Defense System - Backend API Server               ║
 ╚════════════════════════════════════════════════════════════╝
@@ -134,8 +135,9 @@ API Endpoints:
 
 📖 API Documentation: http://localhost:${PORT}/api-docs
 🏥 Health Check: http://localhost:${PORT}/health
-    `);
-});
+        `);
+    });
+}
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
