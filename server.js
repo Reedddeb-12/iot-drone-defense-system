@@ -1,13 +1,10 @@
-// Backend Server for Mobile Notifications
+// Backend Server for Email Notifications
 // Run with: node server.js
 
 const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
-const twilio = require('twilio');
-const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,13 +21,6 @@ const CONFIG = {
         service: 'gmail',
         user: process.env.EMAIL_USER || 'reeddhijitdeb@gmail.com',
         password: process.env.EMAIL_PASSWORD || 'xxvypgyhkyxdhasy'
-    },
-    
-    // Twilio Configuration for SMS
-    twilio: {
-        accountSid: process.env.TWILIO_ACCOUNT_SID || 'your-twilio-account-sid',
-        authToken: process.env.TWILIO_AUTH_TOKEN || 'your-twilio-auth-token',
-        phoneNumber: process.env.TWILIO_PHONE || '+1234567890'
     }
 };
 
@@ -43,18 +33,7 @@ const emailTransporter = nodemailer.createTransport({
     }
 });
 
-// Initialize Twilio client (optional)
-let twilioClient = null;
-if (CONFIG.twilio.accountSid && CONFIG.twilio.accountSid.startsWith('AC')) {
-    try {
-        twilioClient = twilio(CONFIG.twilio.accountSid, CONFIG.twilio.authToken);
-        console.log('✅ Twilio SMS enabled');
-    } catch (error) {
-        console.warn('⚠️ Twilio not configured - SMS alerts disabled');
-    }
-} else {
-    console.warn('⚠️ Twilio not configured - SMS alerts disabled');
-}
+console.log('✅ Email service configured');
 
 // Test endpoint
 app.get('/api/test', (req, res) => {
@@ -116,7 +95,7 @@ app.post('/api/send-email', async (req, res) => {
 
         const info = await emailTransporter.sendMail(mailOptions);
         
-        console.log('Email sent:', info.messageId);
+        console.log('✅ Email sent:', info.messageId);
         res.json({ 
             success: true, 
             messageId: info.messageId,
@@ -124,148 +103,7 @@ app.post('/api/send-email', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Email error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
-
-// Send SMS Alert
-app.post('/api/send-sms', async (req, res) => {
-    try {
-        const { to, message } = req.body;
-
-        if (!to || !message) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Missing required fields' 
-            });
-        }
-
-        if (!twilioClient) {
-            return res.status(503).json({ 
-                success: false, 
-                error: 'SMS service not configured. Please add Twilio credentials.' 
-            });
-        }
-
-        const smsMessage = await twilioClient.messages.create({
-            body: message,
-            from: CONFIG.twilio.phoneNumber,
-            to: to
-        });
-
-        console.log('SMS sent:', smsMessage.sid);
-        res.json({ 
-            success: true, 
-            sid: smsMessage.sid,
-            message: 'SMS sent successfully'
-        });
-
-    } catch (error) {
-        console.error('SMS error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
-
-// Send both Email and SMS
-app.post('/api/send-alert', async (req, res) => {
-    try {
-        const { email, phone, threatData, snapshot } = req.body;
-
-        const results = {
-            email: { success: false },
-            sms: { success: false }
-        };
-
-        // Prepare alert message
-        const subject = `🚨 THREAT ALERT: ${threatData.threatType.toUpperCase()} Detected`;
-        const emailBody = `
-THREAT DETECTION ALERT
-
-Time: ${new Date(threatData.timestamp).toLocaleString()}
-Threat Type: ${threatData.threatType}
-Confidence: ${threatData.confidence}%
-Severity: ${threatData.severity}
-Location: ${threatData.location}
-
-A snapshot has been attached to this email.
-Please review immediately.
-
-- Drone Defense System
-        `;
-
-        const smsBody = `🚨 THREAT ALERT: ${threatData.threatType} detected with ${threatData.confidence}% confidence at ${new Date(threatData.timestamp).toLocaleTimeString()}. Check your email for snapshot.`;
-
-        // Send Email
-        if (email) {
-            try {
-                const mailOptions = {
-                    from: CONFIG.email.user,
-                    to: email,
-                    subject: subject,
-                    text: emailBody,
-                    html: `
-                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                            <div style="background: linear-gradient(135deg, #1a472a, #2d5a3d); padding: 20px; border-radius: 10px 10px 0 0;">
-                                <h1 style="color: #00ff88; margin: 0;">🚨 THREAT ALERT</h1>
-                            </div>
-                            <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
-                                <pre style="background: white; padding: 15px; border-radius: 5px; border-left: 4px solid #ff4444;">${emailBody}</pre>
-                                <h3>Threat Snapshot:</h3>
-                                <img src="cid:snapshot" style="max-width: 100%; border-radius: 5px; border: 2px solid #1a472a;" />
-                                <p style="color: #666; font-size: 12px; margin-top: 20px;">
-                                    This is an automated alert from your Drone Defense System.
-                                </p>
-                            </div>
-                        </div>
-                    `,
-                    attachments: [{
-                        filename: 'threat-snapshot.jpg',
-                        content: snapshot.split(',')[1],
-                        encoding: 'base64',
-                        cid: 'snapshot'
-                    }]
-                };
-
-                const info = await emailTransporter.sendMail(mailOptions);
-                results.email = { success: true, messageId: info.messageId };
-                console.log('Email sent:', info.messageId);
-            } catch (error) {
-                console.error('Email error:', error);
-                results.email = { success: false, error: error.message };
-            }
-        }
-
-        // Send SMS
-        if (phone) {
-            try {
-                const smsMessage = await twilioClient.messages.create({
-                    body: smsBody,
-                    from: CONFIG.twilio.phoneNumber,
-                    to: phone
-                });
-
-                results.sms = { success: true, sid: smsMessage.sid };
-                console.log('SMS sent:', smsMessage.sid);
-            } catch (error) {
-                console.error('SMS error:', error);
-                results.sms = { success: false, error: error.message };
-            }
-        }
-
-        res.json({ 
-            success: results.email.success || results.sms.success,
-            results: results
-        });
-
-    } catch (error) {
-        console.error('Alert error:', error);
+        console.error('❌ Email error:', error);
         res.status(500).json({ 
             success: false, 
             error: error.message 
@@ -278,7 +116,6 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'healthy',
         email: CONFIG.email.user !== 'your-email@gmail.com',
-        sms: CONFIG.twilio.accountSid !== 'your-twilio-account-sid',
         timestamp: new Date().toISOString()
     });
 });
@@ -287,7 +124,7 @@ app.get('/api/health', (req, res) => {
 app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║   Drone Defense System - Backend Server                   ║
+║   Drone Defense System - Email Alert Server               ║
 ╚════════════════════════════════════════════════════════════╝
 
 Server running on: http://localhost:${PORT}
@@ -295,14 +132,11 @@ API Endpoints:
   - GET  /api/test        - Test server
   - GET  /api/health      - Health check
   - POST /api/send-email  - Send email alert
-  - POST /api/send-sms    - Send SMS alert
-  - POST /api/send-alert  - Send both email & SMS
 
 Configuration Status:
   Email: ${CONFIG.email.user !== 'your-email@gmail.com' ? '✓ Configured' : '✗ Not configured'}
-  SMS:   ${CONFIG.twilio.accountSid !== 'your-twilio-account-sid' ? '✓ Configured' : '✗ Not configured'}
 
-⚠️  IMPORTANT: Update credentials in server.js or use environment variables
+⚠️  IMPORTANT: Update email credentials in server.js or use environment variables
     `);
 });
 

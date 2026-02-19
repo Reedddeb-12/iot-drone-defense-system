@@ -6,9 +6,12 @@
     <title>Advanced ML Detection - Drone Defense System</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
-    <!-- TensorFlow.js and COCO-SSD Model -->
+    <!-- TensorFlow.js and Detection Models -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
+    
+    <!-- YOLO Model Support -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.min.js"></script>
     
     <!-- Leaflet.js for Maps -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
@@ -92,6 +95,41 @@
             border-radius: 15px;
             overflow: hidden;
             border: 2px solid var(--primary-color);
+            min-height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--accent-color);
+            font-size: 1.2rem;
+            text-align: center;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .video-loading i {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            animation: spin 2s linear infinite;
+        }
+
+        .video-loading p {
+            margin: 0;
+            font-weight: 500;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         #videoElement {
@@ -345,12 +383,27 @@
 <body>
     <div class="header">
         <h1><i class="fas fa-brain"></i> AI Threat Detection System</h1>
-        <p style="color: #a0c4a0; margin-top: 10px;">COCO-SSD Object Detection Model</p>
+        <p style="color: #a0c4a0; margin-top: 10px;">Hybrid Detection: COCO-SSD + YOLOv8</p>
+        <div class="model-selector">
+            <button class="model-btn active" id="cocoBtn" onclick="switchModel('coco')">
+                <i class="fas fa-cube"></i> COCO-SSD
+            </button>
+            <button class="model-btn" id="yoloBtn" onclick="switchModel('yolo')">
+                <i class="fas fa-bolt"></i> YOLOv8
+            </button>
+            <button class="model-btn" id="hybridBtn" onclick="switchModel('hybrid')">
+                <i class="fas fa-layer-group"></i> Hybrid Mode
+            </button>
+        </div>
     </div>
 
     <div class="main-grid">
         <div class="left-column">
             <div class="video-container">
+                <div class="video-loading" id="videoLoading">
+                    <i class="fas fa-circle-notch"></i>
+                    <p>Click "Start Detection" to begin</p>
+                </div>
                 <video id="videoElement" autoplay playsinline></video>
                 <canvas id="detectionCanvas"></canvas>
                 <div class="video-overlay">
@@ -426,16 +479,29 @@
             </div>
 
             <div class="control-section">
-                <h3><i class="fas fa-mobile-alt"></i> Mobile Alerts</h3>
+                <h3><i class="fas fa-envelope"></i> Email Alerts</h3>
+                <div style="background: rgba(0, 255, 136, 0.1); border: 1px solid #00ff88; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+                    <p style="margin: 0; color: #00ff88; font-weight: bold;">
+                        <i class="fas fa-check-circle"></i> Auto Email Alerts: ACTIVE
+                    </p>
+                    <p style="margin: 5px 0 0 0; font-size: 0.85rem; color: #a0c4a0;">
+                        Each unique threat detected once, then looks for new threats
+                    </p>
+                </div>
                 <button class="btn btn-secondary" onclick="openMobileSettings()">
-                    <i class="fas fa-cog"></i> Configure Mobile Alerts
+                    <i class="fas fa-cog"></i> Configure Email Address
                 </button>
                 <button class="btn btn-secondary" onclick="testMobileAlert()">
-                    <i class="fas fa-paper-plane"></i> Test Alert
+                    <i class="fas fa-paper-plane"></i> Test Email Alert
+                </button>
+                <button class="btn btn-secondary" onclick="resetAlertedThreats()">
+                    <i class="fas fa-redo"></i> Reset Detected Threats
                 </button>
                 <div id="mobileStatus" style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; font-size: 0.85rem;">
                     <p><strong>Status:</strong> <span id="alertStatus">Not Configured</span></p>
                     <p><strong>Methods:</strong> <span id="alertMethods">None</span></p>
+                    <p><strong>Cooldown:</strong> <span id="alertCooldown">60 seconds</span></p>
+                    <p><strong>Alerted Threats:</strong> <span id="alertedCount">0</span></p>
                 </div>
             </div>
 
@@ -480,7 +546,9 @@
     </div>
 
     <!-- Load custom scripts -->
+    <script src="config.js"></script>
     <script src="js/video-stream.js"></script>
+    <script src="js/hybrid-detection.js"></script>
     <script src="js/advanced-ml-model.js"></script>
     <script src="js/iot-communication.js"></script>
     <script src="js/mobile-notification.js"></script>
@@ -489,6 +557,7 @@
     <script>
         // Initialize systems
         const videoManager = new VideoStreamManager();
+        const hybridDetector = new HybridDetectionSystem();
         const mlModel = new AdvancedMLModel();
         const iotManager = new IoTCommunicationManager();
         const mobileNotifier = new MobileNotificationSystem();
@@ -504,7 +573,7 @@
         let cameraMarker = null;
         let threatMarkers = [];
         let heatmapLayer = null;
-        let userLocation = { lat: 28.6139, lng: 77.2090 }; // Default: New Delhi
+        let userLocation = CONFIG.map.defaultLocation;
         let voiceEnabled = false;
         let soundDetectionEnabled = false;
         
@@ -515,17 +584,59 @@
             detectionCount: 0
         };
 
+        // Switch detection model
+        function switchModel(model) {
+            hybridDetector.setActiveModel(model);
+            
+            // Update UI
+            document.querySelectorAll('.model-btn').forEach(btn => btn.classList.remove('active'));
+            if (model === 'coco') {
+                document.getElementById('cocoBtn').classList.add('active');
+            } else if (model === 'yolo') {
+                document.getElementById('yoloBtn').classList.add('active');
+            } else if (model === 'hybrid') {
+                document.getElementById('hybridBtn').classList.add('active');
+            }
+            
+            showNotification(`Switched to ${model.toUpperCase()} mode`, 'success');
+            updateModelInfo();
+        }
+
         // Initialize on page load
         async function initialize() {
-            showNotification('Initializing ML models...', 'info');
+            showNotification('Initializing hybrid detection system...', 'info');
             
-            const success = await mlModel.initializeModels();
+            const success = await hybridDetector.initialize();
             
             if (success) {
-                showNotification('All models loaded successfully!', 'success');
+                showNotification('Hybrid detection system ready!', 'success');
+                
+                // Set unique threat timeout from config
+                if (CONFIG.detection.uniqueThreatTimeout) {
+                    hybridDetector.setAlertedThreatTimeout(CONFIG.detection.uniqueThreatTimeout);
+                }
+                
                 updateModelInfo();
             } else {
-                showNotification('Failed to load some models', 'error');
+                showNotification('Failed to load detection models', 'error');
+            }
+
+            // Auto-enable email alerts from config
+            if (CONFIG.email.autoSendAlerts) {
+                mobileNotifier.initialize({
+                    email: CONFIG.email.defaultRecipient,
+                    phone: '',
+                    enableEmail: true,
+                    enableSMS: false,
+                    enablePush: CONFIG.push.enabled,
+                    enableWebSocket: false
+                });
+                
+                // Set cooldown from config
+                mobileNotifier.setCooldownPeriod(CONFIG.email.cooldownPeriod);
+                
+                showNotification('✉️ Auto email alerts enabled: ' + CONFIG.email.defaultRecipient, 'success');
+                updateMobileStatus();
             }
 
             // Initialize map
@@ -680,21 +791,54 @@
 
         // Start detection
         document.getElementById('startBtn').addEventListener('click', async () => {
-            const stream = await videoManager.initializeStream('main-camera', videoElement, 'webcam');
-            
-            if (stream) {
-                isDetecting = true;
-                document.getElementById('startBtn').style.display = 'none';
-                document.getElementById('stopBtn').style.display = 'block';
+            try {
+                const loadingEl = document.getElementById('videoLoading');
+                loadingEl.innerHTML = '<i class="fas fa-circle-notch"></i><p>Requesting camera access...</p>';
                 
-                startDetectionLoop();
-                showNotification('Detection started', 'success');
+                showNotification('Requesting camera access...', 'info');
+                
+                const stream = await videoManager.initializeStream('main-camera', videoElement, 'webcam');
+                
+                if (stream) {
+                    loadingEl.innerHTML = '<i class="fas fa-circle-notch"></i><p>Loading video stream...</p>';
+                    
+                    // Wait for video to be ready
+                    await new Promise((resolve) => {
+                        videoElement.onloadedmetadata = () => {
+                            videoElement.play();
+                            resolve();
+                        };
+                    });
+                    
+                    // Small delay to ensure video is playing
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // Hide loading indicator
+                    loadingEl.style.display = 'none';
+                    
+                    isDetecting = true;
+                    document.getElementById('startBtn').style.display = 'none';
+                    document.getElementById('stopBtn').style.display = 'block';
+                    
+                    startDetectionLoop();
+                    showNotification('Detection started - Camera active!', 'success');
+                } else {
+                    loadingEl.innerHTML = '<i class="fas fa-exclamation-triangle"></i><p>Camera access denied. Please check permissions.</p>';
+                    showNotification('Failed to access camera. Please check permissions.', 'error');
+                }
+            } catch (error) {
+                console.error('Camera error:', error);
+                document.getElementById('videoLoading').innerHTML = 
+                    '<i class="fas fa-exclamation-triangle"></i><p>Error: ' + error.message + '</p>';
+                showNotification('Camera error: ' + error.message, 'error');
             }
         });
 
         // Stop detection
         document.getElementById('stopBtn').addEventListener('click', () => {
             stopDetection();
+            document.getElementById('videoLoading').style.display = 'flex';
+            document.getElementById('videoLoading').innerHTML = '<i class="fas fa-video-slash"></i><p>Detection stopped</p>';
         });
 
         function stopDetection() {
@@ -721,41 +865,15 @@
             detectionInterval = setInterval(async () => {
                 if (!isDetecting) return;
 
-                const predictions = await mlModel.detect(videoElement);
+                const predictions = await hybridDetector.detect(videoElement, canvas);
                 
                 if (predictions && predictions.length > 0) {
-                    drawDetections(predictions);
                     updateStats(predictions);
                     checkThreats(predictions);
                 }
 
                 updateFPS();
             }, delay);
-        }
-
-        // Draw detections on canvas
-        function drawDetections(predictions) {
-            canvas.width = videoElement.videoWidth;
-            canvas.height = videoElement.videoHeight;
-            
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            predictions.forEach(pred => {
-                const [x, y, width, height] = pred.bbox;
-                const isThreat = ['person', 'drone', 'airplane', 'bird'].includes(pred.class);
-                
-                ctx.strokeStyle = isThreat ? '#ff4444' : '#00ff88';
-                ctx.lineWidth = 3;
-                ctx.fillStyle = isThreat ? 'rgba(255, 68, 68, 0.2)' : 'rgba(0, 255, 136, 0.2)';
-
-                ctx.fillRect(x, y, width, height);
-                ctx.strokeRect(x, y, width, height);
-
-                const label = `${pred.class} ${Math.round(pred.score * 100)}%`;
-                ctx.fillStyle = isThreat ? '#ff4444' : '#00ff88';
-                ctx.font = 'bold 16px Arial';
-                ctx.fillText(label, x, y > 20 ? y - 5 : y + 20);
-            });
         }
 
         // Update statistics
@@ -816,19 +934,26 @@
 
         // Update model info
         function updateModelInfo() {
-            const info = mlModel.getModelInfo();
-            const stats = mlModel.getStatistics();
+            const info = hybridDetector.getModelInfo();
+            const stats = hybridDetector.getStatistics();
             
-            document.getElementById('activeModel').textContent = 'COCO-SSD';
+            let modelName = 'COCO-SSD';
+            if (info.activeModel === 'yolo') modelName = 'YOLOv8';
+            else if (info.activeModel === 'hybrid') modelName = 'Hybrid (COCO + YOLO)';
+            
+            document.getElementById('activeModel').textContent = modelName;
             document.getElementById('historySize').textContent = info.detectionHistorySize;
-            document.getElementById('mostDetected').textContent = stats.mostCommonClass || 'N/A';
+            
+            const mostCommon = Object.entries(stats.byType || {})
+                .sort((a, b) => b[1] - a[1])[0];
+            document.getElementById('mostDetected').textContent = mostCommon ? mostCommon[0] : 'N/A';
         }
 
         // Sliders
         document.getElementById('thresholdSlider').addEventListener('input', (e) => {
             const value = e.target.value;
             document.getElementById('thresholdValue').textContent = value + '%';
-            mlModel.setConfidenceThreshold(value / 100);
+            hybridDetector.setThreshold(value / 100);
         });
 
         document.getElementById('fpsSlider').addEventListener('input', (e) => {
@@ -846,7 +971,7 @@
         document.getElementById('nmsSlider').addEventListener('input', (e) => {
             const value = e.target.value;
             document.getElementById('nmsValue').textContent = value + '%';
-            mlModel.setNMSThreshold(value / 100);
+            hybridDetector.setNMSThreshold(value / 100);
         });
 
         // Snapshot
@@ -857,7 +982,20 @@
 
         // Export data
         function exportData() {
-            mlModel.exportDetectionData();
+            const stats = hybridDetector.getStatistics();
+            const data = {
+                timestamp: new Date().toISOString(),
+                statistics: stats,
+                detections: hybridDetector.detectedThreats
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `threat-detection-${Date.now()}.json`;
+            a.click();
+            
             showNotification('Detection data exported', 'success');
         }
 
@@ -906,50 +1044,68 @@
         setInterval(() => {
             if (isDetecting) {
                 updateModelInfo();
+                updateMobileStatus(); // Update alerted count
             }
         }, 5000);
 
         // Mobile notification functions
         function openMobileSettings() {
-            const email = prompt('Enter your email address for alerts:');
-            const phone = prompt('Enter your phone number (with country code, e.g., +1234567890):');
+            const currentEmail = mobileNotifier.userContacts.email || 'reeddhijitdeb@gmail.com';
             
-            if (email || phone) {
+            const email = prompt('Enter your email address for alerts:', currentEmail);
+            
+            if (email) {
                 mobileNotifier.initialize({
                     email: email,
-                    phone: phone,
-                    enableEmail: !!email,
-                    enableSMS: !!phone,
+                    phone: '',
+                    enableEmail: true,
+                    enableSMS: false,
                     enablePush: true,
                     enableWebSocket: false
                 });
                 
                 updateMobileStatus();
-                showNotification('Mobile alerts configured successfully!', 'success');
+                showNotification('Email alerts configured successfully!', 'success');
             }
         }
 
         function testMobileAlert() {
             if (!mobileNotifier.isEnabled) {
-                showNotification('Please configure mobile alerts first', 'error');
+                showNotification('Please configure email alerts first', 'error');
                 openMobileSettings();
                 return;
             }
             
+            showNotification('Sending test email alert...', 'info');
             mobileNotifier.testNotification();
+        }
+
+        function resetAlertedThreats() {
+            hybridDetector.clearAlertedThreats();
+            showNotification('All detected threats cleared! Ready to detect again.', 'success');
+            updateModelInfo();
         }
 
         function updateMobileStatus() {
             const status = mobileNotifier.getStatus();
-            document.getElementById('alertStatus').textContent = status.enabled ? 'Active' : 'Inactive';
+            document.getElementById('alertStatus').textContent = status.enabled ? 'Active ✓' : 'Inactive';
+            document.getElementById('alertStatus').style.color = status.enabled ? '#00ff88' : '#ff4444';
             
             const methods = [];
             if (status.methods.email) methods.push('Email');
-            if (status.methods.sms) methods.push('SMS');
-            if (status.methods.push) methods.push('Push');
-            if (status.methods.websocket) methods.push('WebSocket');
+            if (status.methods.push) methods.push('Push Notifications');
             
             document.getElementById('alertMethods').textContent = methods.length > 0 ? methods.join(', ') : 'None';
+            
+            // Show email address
+            if (mobileNotifier.userContacts.email) {
+                const emailDisplay = mobileNotifier.userContacts.email;
+                document.getElementById('alertMethods').textContent += ' (' + emailDisplay + ')';
+            }
+            
+            // Show alerted threats count
+            const info = hybridDetector.getModelInfo();
+            document.getElementById('alertedCount').textContent = info.alertedThreatsCount || 0;
         }
 
         // Unique Features Functions

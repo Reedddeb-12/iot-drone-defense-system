@@ -1,7 +1,7 @@
 {
   "name": "iot-drone-defense-system",
   "version": "1.0.0",
-  "description": "IoT-based Drone Defense System with AI threat detection and mobile alerts",
+  "description": "IoT-based Drone Defense System with AI threat detection and email alerts",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,16 +13,15 @@
     "defense",
     "ai",
     "surveillance",
-    "threat-detection"
+    "threat-detection",
+    "email-alerts"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
     "cors": "^2.8.5",
-    "nodemailer": "^6.9.7",
-    "twilio": "^4.19.0",
-    "multer": "^1.4.5-lts.1"
+    "express": "^4.18.2",
+    "nodemailer": "^6.9.7"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

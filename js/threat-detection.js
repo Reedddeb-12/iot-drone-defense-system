@@ -4,10 +4,14 @@ class ThreatDetectionSystem {
         this.model = null;
         this.isModelLoaded = false;
         this.detectionInterval = null;
-        this.detectionThreshold = 0.6;
+        this.detectionThreshold = 0.7; // Increased from 0.6 for better accuracy
         this.threatObjects = ['person', 'car', 'truck', 'airplane', 'bird', 'drone'];
         this.detectedThreats = [];
         this.alertCallback = null;
+        this.consecutiveDetections = {}; // Track consecutive detections
+        this.minConsecutiveFrames = 3; // Require 3 consecutive detections
+        this.lastDetectionTime = {};
+        this.detectionTimeout = 2000; // Reset if no detection for 2 seconds
     }
 
     // Initialize TensorFlow.js and load COCO-SSD model
@@ -56,7 +60,7 @@ class ThreatDetectionSystem {
         }
     }
 
-    // Detect threats in video frame
+    // Detect threats in video frame with improved accuracy
     async detectThreats(videoElement, canvasElement) {
         if (!this.model || !videoElement.videoWidth) return;
 
@@ -64,25 +68,62 @@ class ThreatDetectionSystem {
             // Run detection
             const predictions = await this.model.detect(videoElement);
             
-            // Filter for threat objects
+            // Filter for threat objects with higher confidence
             const threats = predictions.filter(pred => 
                 this.threatObjects.includes(pred.class) && 
                 pred.score >= this.detectionThreshold
             );
 
+            // Apply temporal filtering for accuracy
+            const confirmedThreats = this.applyTemporalFiltering(threats);
+
             // Draw bounding boxes
             this.drawDetections(canvasElement, videoElement, predictions);
 
-            // Process threats
-            if (threats.length > 0) {
-                this.processThreats(threats);
+            // Process only confirmed threats
+            if (confirmedThreats.length > 0) {
+                this.processThreats(confirmedThreats);
             }
 
-            return threats;
+            return confirmedThreats;
         } catch (error) {
             console.error('Detection error:', error);
             return [];
         }
+    }
+
+    // Apply temporal filtering to reduce false positives
+    applyTemporalFiltering(threats) {
+        const now = Date.now();
+        const confirmedThreats = [];
+
+        // Clean up old detections
+        Object.keys(this.lastDetectionTime).forEach(key => {
+            if (now - this.lastDetectionTime[key] > this.detectionTimeout) {
+                delete this.consecutiveDetections[key];
+                delete this.lastDetectionTime[key];
+            }
+        });
+
+        threats.forEach(threat => {
+            const key = `${threat.class}_${Math.round(threat.bbox[0] / 50)}_${Math.round(threat.bbox[1] / 50)}`;
+            
+            // Initialize or increment consecutive detection counter
+            if (!this.consecutiveDetections[key]) {
+                this.consecutiveDetections[key] = 1;
+            } else {
+                this.consecutiveDetections[key]++;
+            }
+            
+            this.lastDetectionTime[key] = now;
+
+            // Only confirm threat if detected in multiple consecutive frames
+            if (this.consecutiveDetections[key] >= this.minConsecutiveFrames) {
+                confirmedThreats.push(threat);
+            }
+        });
+
+        return confirmedThreats;
     }
 
     // Draw detection boxes on canvas
@@ -148,12 +189,31 @@ class ThreatDetectionSystem {
         }
     }
 
-    // Calculate threat severity
+    // Calculate threat severity with improved logic
     calculateSeverity(threat) {
-        const highThreatObjects = ['person', 'drone', 'airplane'];
+        const criticalObjects = ['drone', 'airplane'];
+        const highThreatObjects = ['person'];
+        const mediumThreatObjects = ['car', 'truck'];
         const confidence = threat.score;
+        const size = threat.bbox[2] * threat.bbox[3]; // width * height
 
+        // Critical threats
+        if (criticalObjects.includes(threat.class) && confidence > 0.75) {
+            return 'CRITICAL';
+        }
+        
+        // High threats - consider both confidence and object size
         if (highThreatObjects.includes(threat.class) && confidence > 0.8) {
+            return 'HIGH';
+        }
+        
+        // Medium threats
+        if (mediumThreatObjects.includes(threat.class) && confidence > 0.75) {
+            return 'MEDIUM';
+        }
+        
+        // Size-based severity adjustment
+        if (size > 50000 && confidence > 0.7) {
             return 'HIGH';
         } else if (confidence > 0.7) {
             return 'MEDIUM';
