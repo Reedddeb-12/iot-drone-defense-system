@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced ML Detection - Drone Defense System</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- TensorFlow.js and COCO-SSD Model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
+    
+    <!-- Leaflet.js for Maps -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-color: #1a472a;
+            --accent-color: #00ff88;
+            --warning-color: #ff4444;
+            --dark-bg: #0a0f0d;
+            --text-light: #e8f5e8;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--dark-bg) 0%, #050807 100%);
+            color: var(--text-light);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(90deg, var(--primary-color), #2d5a3d);
+            border-radius: 15px;
+            margin-bottom: 30px;
+            border: 2px solid var(--accent-color);
+        }
+
+        .header h1 {
+            color: var(--accent-color);
+            margin-bottom: 10px;
+        }
+
+        .model-selector {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 15px;
+        }
+
+        .model-btn {
+            padding: 8px 20px;
+            background: rgba(0, 255, 136, 0.2);
+            border: 1px solid var(--accent-color);
+            border-radius: 20px;
+            color: var(--accent-color);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .model-btn.active {
+            background: var(--accent-color);
+            color: #000;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .left-column {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            border: 2px solid var(--primary-color);
+        }
+
+        #videoElement {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        #detectionCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .threat-level {
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            border: 2px solid;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .threat-low { border-color: var(--accent-color); color: var(--accent-color); }
+        .threat-medium { border-color: #ff8800; color: #ff8800; }
+        .threat-high { border-color: var(--warning-color); color: var(--warning-color); animation: pulse 1s infinite; }
+
+        .controls-panel {
+            background: linear-gradient(135deg, var(--primary-color), #2d5a3d);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid var(--accent-color);
+            max-height: 800px;
+            overflow-y: auto;
+        }
+
+        .control-section {
+            margin-bottom: 25px;
+        }
+
+        .control-section h3 {
+            color: var(--accent-color);
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, var(--accent-color), #00aa44);
+            color: #000;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
+        }
+
+        .btn-danger {
+            background: var(--warning-color);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stat-box {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #a0c4a0;
+            margin-top: 5px;
+        }
+
+        .slider-container {
+            margin: 15px 0;
+        }
+
+        .slider-container label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.2);
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--accent-color);
+            cursor: pointer;
+        }
+
+        .slider-value {
+            text-align: center;
+            color: var(--accent-color);
+            font-weight: bold;
+            margin-top: 5px;
+        }
+
+        .map-container {
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            border: 2px solid var(--primary-color);
+            height: 400px;
+            position: relative;
+        }
+
+        #liveMap {
+            width: 100%;
+            height: 100%;
+        }
+
+        .map-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid var(--accent-color);
+        }
+
+        .map-overlay h4 {
+            color: var(--accent-color);
+            margin: 0 0 5px 0;
+            font-size: 0.9rem;
+        }
+
+        .map-overlay p {
+            margin: 3px 0;
+            font-size: 0.8rem;
+            color: var(--text-light);
+        }
+
+        .leaflet-popup-content-wrapper {
+            background: linear-gradient(135deg, var(--primary-color), #2d5a3d);
+            color: var(--text-light);
+            border: 2px solid var(--accent-color);
+        }
+
+        .leaflet-popup-content {
+            margin: 10px;
+        }
+
+        .leaflet-popup-tip {
+            background: var(--primary-color);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-color), #00aa44);
+            transition: width 0.3s ease;
+        }
+
+        .model-info {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
+
+        .model-info p {
+            margin: 5px 0;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .map-container {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><i class="fas fa-brain"></i> AI Threat Detection System</h1>
+        <p style="color: #a0c4a0; margin-top: 10px;">COCO-SSD Object Detection Model</p>
+    </div>
+
+    <div class="main-grid">
+        <div class="left-column">
+            <div class="video-container">
+                <video id="videoElement" autoplay playsinline></video>
+                <canvas id="detectionCanvas"></canvas>
+                <div class="video-overlay">
+                    <div class="threat-level threat-low" id="threatLevel">
+                        <i class="fas fa-shield-alt"></i> THREAT: LOW
+                    </div>
+                </div>
+            </div>
+
+            <div class="map-container">
+                <div class="map-overlay">
+                    <h4><i class="fas fa-map-marker-alt"></i> Live Surveillance Map</h4>
+                    <p id="mapStatus">Initializing...</p>
+                    <p id="threatMarkers">Threats: 0</p>
+                </div>
+                <div id="liveMap"></div>
+            </div>
+        </div>
+
+        <div class="controls-panel">
+            <div class="control-section">
+                <h3><i class="fas fa-video"></i> Camera Controls</h3>
+                <button class="btn btn-primary" id="startBtn">
+                    <i class="fas fa-play"></i> Start Detection
+                </button>
+                <button class="btn btn-danger" id="stopBtn" style="display: none;">
+                    <i class="fas fa-stop"></i> Stop Detection
+                </button>
+                <button class="btn btn-secondary" id="snapshotBtn">
+                    <i class="fas fa-camera"></i> Capture Snapshot
+                </button>
+            </div>
+
+            <div class="control-section">
+                <h3><i class="fas fa-sliders-h"></i> Detection Settings</h3>
+                
+                <div class="slider-container">
+                    <label>Confidence Threshold</label>
+                    <input type="range" id="thresholdSlider" min="0" max="100" value="60">
+                    <div class="slider-value" id="thresholdValue">60%</div>
+                </div>
+
+                <div class="slider-container">
+                    <label>Detection FPS</label>
+                    <input type="range" id="fpsSlider" min="1" max="10" value="3">
+                    <div class="slider-value" id="fpsValue">3 FPS</div>
+                </div>
+
+                <div class="slider-container">
+                    <label>NMS Threshold</label>
+                    <input type="range" id="nmsSlider" min="0" max="100" value="50">
+                    <div class="slider-value" id="nmsValue">50%</div>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3><i class="fas fa-star"></i> Unique Features</h3>
+                <button class="btn btn-secondary" onclick="toggleVoiceAlerts()">
+                    <i class="fas fa-volume-up"></i> <span id="voiceBtn">Enable Voice Alerts</span>
+                </button>
+                <button class="btn btn-secondary" onclick="toggleSoundDetection()">
+                    <i class="fas fa-microphone"></i> <span id="soundBtn">Enable Sound Detection</span>
+                </button>
+                <button class="btn btn-secondary" onclick="showWeather()">
+                    <i class="fas fa-cloud-sun"></i> Check Weather Threat
+                </button>
+                <button class="btn btn-secondary" onclick="showHeatmap()">
+                    <i class="fas fa-fire"></i> Show Threat Heatmap
+                </button>
+                <button class="btn btn-secondary" onclick="showStatistics()">
+                    <i class="fas fa-chart-pie"></i> View Statistics
+                </button>
+            </div>
+
+            <div class="control-section">
+                <h3><i class="fas fa-mobile-alt"></i> Mobile Alerts</h3>
+                <button class="btn btn-secondary" onclick="openMobileSettings()">
+                    <i class="fas fa-cog"></i> Configure Mobile Alerts
+                </button>
+                <button class="btn btn-secondary" onclick="testMobileAlert()">
+                    <i class="fas fa-paper-plane"></i> Test Alert
+                </button>
+                <div id="mobileStatus" style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; font-size: 0.85rem;">
+                    <p><strong>Status:</strong> <span id="alertStatus">Not Configured</span></p>
+                    <p><strong>Methods:</strong> <span id="alertMethods">None</span></p>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <h3><i class="fas fa-download"></i> Data Export</h3>
+                <button class="btn btn-secondary" onclick="exportData()">
+                    <i class="fas fa-download"></i> Export Detection Data
+                </button>
+                <button class="btn btn-secondary" onclick="clearThreatMarkers()">
+                    <i class="fas fa-eraser"></i> Clear Map Markers
+                </button>
+            </div>
+
+            <div class="control-section">
+                <h3><i class="fas fa-chart-bar"></i> Statistics</h3>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-value" id="detectionCount">0</div>
+                        <div class="stat-label">Total Detections</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="threatCount">0</div>
+                        <div class="stat-label">Threats</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="fpsDisplay">0</div>
+                        <div class="stat-label">Current FPS</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="confidenceDisplay">0%</div>
+                        <div class="stat-label">Avg Confidence</div>
+                    </div>
+                </div>
+
+                <div class="model-info" id="modelInfo">
+                    <p><strong>Active Model:</strong> <span id="activeModel">Loading...</span></p>
+                    <p><strong>Detection History:</strong> <span id="historySize">0</span> frames</p>
+                    <p><strong>Most Detected:</strong> <span id="mostDetected">N/A</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load custom scripts -->
+    <script src="js/video-stream.js"></script>
+    <script src="js/advanced-ml-model.js"></script>
+    <script src="js/iot-communication.js"></script>
+    <script src="js/mobile-notification.js"></script>
+    <script src="js/unique-features.js"></script>
+
+    <script>
+        // Initialize systems
+        const videoManager = new VideoStreamManager();
+        const mlModel = new AdvancedMLModel();
+        const iotManager = new IoTCommunicationManager();
+        const mobileNotifier = new MobileNotificationSystem();
+        const uniqueFeatures = new UniqueFeatures();
+
+        const videoElement = document.getElementById('videoElement');
+        const canvas = document.getElementById('detectionCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let isDetecting = false;
+        let detectionInterval = null;
+        let liveMap = null;
+        let cameraMarker = null;
+        let threatMarkers = [];
+        let heatmapLayer = null;
+        let userLocation = { lat: 28.6139, lng: 77.2090 }; // Default: New Delhi
+        let voiceEnabled = false;
+        let soundDetectionEnabled = false;
+        
+        let stats = {
+            totalDetections: 0,
+            totalThreats: 0,
+            confidenceSum: 0,
+            detectionCount: 0
+        };
+
+        // Initialize on page load
+        async function initialize() {
+            showNotification('Initializing ML models...', 'info');
+            
+            const success = await mlModel.initializeModels();
+            
+            if (success) {
+                showNotification('All models loaded successfully!', 'success');
+                updateModelInfo();
+            } else {
+                showNotification('Failed to load some models', 'error');
+            }
+
+            // Initialize map
+            initializeMap();
+            
+            // Get user location
+            getUserLocation();
+            
+            // Initialize unique features
+            uniqueFeatures.initializeVoiceAlerts();
+            uniqueFeatures.enableAutoResponse();
+            
+            // Fetch weather data
+            if (userLocation) {
+                uniqueFeatures.fetchWeatherData(userLocation.lat, userLocation.lng);
+            }
+        }
+
+        // Initialize live map
+        function initializeMap() {
+            try {
+                liveMap = L.map('liveMap').setView([userLocation.lat, userLocation.lng], 15);
+                
+                // Dark theme tiles
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors',
+                    maxZoom: 19
+                }).addTo(liveMap);
+
+                // Add camera marker
+                const cameraIcon = L.divIcon({
+                    className: 'custom-marker',
+                    html: '<div style="background: #00ff88; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid #1a472a; box-shadow: 0 0 10px rgba(0,255,136,0.5);"><i class="fas fa-video" style="color: #000; font-size: 14px;"></i></div>',
+                    iconSize: [30, 30]
+                });
+
+                cameraMarker = L.marker([userLocation.lat, userLocation.lng], { icon: cameraIcon })
+                    .addTo(liveMap)
+                    .bindPopup(`
+                        <div style="color: #e8f5e8;">
+                            <h4 style="color: #00ff88; margin: 0 0 5px 0;">📹 Active Camera</h4>
+                            <p style="margin: 3px 0;"><strong>Status:</strong> <span style="color: #00ff88;">Online</span></p>
+                            <p style="margin: 3px 0;"><strong>Location:</strong> Current Position</p>
+                            <p style="margin: 3px 0;"><strong>Detection:</strong> Active</p>
+                        </div>
+                    `);
+
+                // Add coverage circle
+                L.circle([userLocation.lat, userLocation.lng], {
+                    color: '#00ff88',
+                    fillColor: '#00ff88',
+                    fillOpacity: 0.1,
+                    radius: 100
+                }).addTo(liveMap);
+
+                document.getElementById('mapStatus').textContent = 'Map Active';
+                console.log('Live map initialized');
+            } catch (error) {
+                console.error('Map initialization error:', error);
+                document.getElementById('mapStatus').textContent = 'Map Error';
+            }
+        }
+
+        // Get user's geolocation
+        function getUserLocation() {
+            if ('geolocation' in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        userLocation = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        };
+                        
+                        if (liveMap && cameraMarker) {
+                            liveMap.setView([userLocation.lat, userLocation.lng], 15);
+                            cameraMarker.setLatLng([userLocation.lat, userLocation.lng]);
+                            
+                            // Update coverage circle
+                            L.circle([userLocation.lat, userLocation.lng], {
+                                color: '#00ff88',
+                                fillColor: '#00ff88',
+                                fillOpacity: 0.1,
+                                radius: 100
+                            }).addTo(liveMap);
+                        }
+                        
+                        console.log('User location updated:', userLocation);
+                        showNotification('Location detected', 'success');
+                    },
+                    (error) => {
+                        console.warn('Geolocation error:', error);
+                        showNotification('Using default location', 'info');
+                    }
+                );
+            }
+        }
+
+        // Add threat marker to map
+        function addThreatMarker(threat) {
+            if (!liveMap) return;
+
+            // Generate random offset for threat location (simulated)
+            const offset = 0.002; // ~200 meters
+            const threatLat = userLocation.lat + (Math.random() - 0.5) * offset;
+            const threatLng = userLocation.lng + (Math.random() - 0.5) * offset;
+
+            // Create threat icon
+            const threatIcon = L.divIcon({
+                className: 'threat-marker',
+                html: `<div style="background: #ff4444; width: 25px; height: 25px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 0 15px rgba(255,68,68,0.8); animation: pulse 1s infinite;">
+                    <i class="fas fa-exclamation-triangle" style="color: #fff; font-size: 12px;"></i>
+                </div>`,
+                iconSize: [25, 25]
+            });
+
+            const marker = L.marker([threatLat, threatLng], { icon: threatIcon })
+                .addTo(liveMap)
+                .bindPopup(`
+                    <div style="color: #e8f5e8;">
+                        <h4 style="color: #ff4444; margin: 0 0 5px 0;">⚠️ THREAT DETECTED</h4>
+                        <p style="margin: 3px 0;"><strong>Type:</strong> ${threat.class.toUpperCase()}</p>
+                        <p style="margin: 3px 0;"><strong>Confidence:</strong> ${Math.round(threat.score * 100)}%</p>
+                        <p style="margin: 3px 0;"><strong>Severity:</strong> <span style="color: #ff4444;">${threat.severity}</span></p>
+                        <p style="margin: 3px 0;"><strong>Time:</strong> ${new Date().toLocaleTimeString()}</p>
+                    </div>
+                `);
+
+            marker.openPopup();
+            threatMarkers.push(marker);
+
+            // Update counter
+            document.getElementById('threatMarkers').textContent = `Threats: ${threatMarkers.length}`;
+
+            // Auto-remove old markers (keep last 10)
+            if (threatMarkers.length > 10) {
+                const oldMarker = threatMarkers.shift();
+                liveMap.removeLayer(oldMarker);
+            }
+
+            // Pan to threat
+            liveMap.panTo([threatLat, threatLng]);
+        }
+
+        // Clear all threat markers
+        function clearThreatMarkers() {
+            threatMarkers.forEach(marker => {
+                liveMap.removeLayer(marker);
+            });
+            threatMarkers = [];
+            document.getElementById('threatMarkers').textContent = 'Threats: 0';
+        }
+
+        // Start detection
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            const stream = await videoManager.initializeStream('main-camera', videoElement, 'webcam');
+            
+            if (stream) {
+                isDetecting = true;
+                document.getElementById('startBtn').style.display = 'none';
+                document.getElementById('stopBtn').style.display = 'block';
+                
+                startDetectionLoop();
+                showNotification('Detection started', 'success');
+            }
+        });
+
+        // Stop detection
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            stopDetection();
+        });
+
+        function stopDetection() {
+            isDetecting = false;
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+                detectionInterval = null;
+            }
+            videoManager.stopAllStreams();
+            
+            document.getElementById('stopBtn').style.display = 'none';
+            document.getElementById('startBtn').style.display = 'block';
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            clearThreatMarkers();
+            showNotification('Detection stopped', 'info');
+        }
+
+        // Detection loop
+        function startDetectionLoop() {
+            const fps = parseInt(document.getElementById('fpsSlider').value);
+            const delay = 1000 / fps;
+
+            detectionInterval = setInterval(async () => {
+                if (!isDetecting) return;
+
+                const predictions = await mlModel.detect(videoElement);
+                
+                if (predictions && predictions.length > 0) {
+                    drawDetections(predictions);
+                    updateStats(predictions);
+                    checkThreats(predictions);
+                }
+
+                updateFPS();
+            }, delay);
+        }
+
+        // Draw detections on canvas
+        function drawDetections(predictions) {
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            predictions.forEach(pred => {
+                const [x, y, width, height] = pred.bbox;
+                const isThreat = ['person', 'drone', 'airplane', 'bird'].includes(pred.class);
+                
+                ctx.strokeStyle = isThreat ? '#ff4444' : '#00ff88';
+                ctx.lineWidth = 3;
+                ctx.fillStyle = isThreat ? 'rgba(255, 68, 68, 0.2)' : 'rgba(0, 255, 136, 0.2)';
+
+                ctx.fillRect(x, y, width, height);
+                ctx.strokeRect(x, y, width, height);
+
+                const label = `${pred.class} ${Math.round(pred.score * 100)}%`;
+                ctx.fillStyle = isThreat ? '#ff4444' : '#00ff88';
+                ctx.font = 'bold 16px Arial';
+                ctx.fillText(label, x, y > 20 ? y - 5 : y + 20);
+            });
+        }
+
+        // Update statistics
+        function updateStats(predictions) {
+            stats.totalDetections += predictions.length;
+            stats.detectionCount++;
+            
+            predictions.forEach(pred => {
+                stats.confidenceSum += pred.score;
+                
+                if (['person', 'drone', 'airplane'].includes(pred.class)) {
+                    stats.totalThreats++;
+                }
+            });
+
+            document.getElementById('detectionCount').textContent = stats.totalDetections;
+            document.getElementById('threatCount').textContent = stats.totalThreats;
+            
+            const avgConfidence = (stats.confidenceSum / stats.totalDetections * 100).toFixed(0);
+            document.getElementById('confidenceDisplay').textContent = avgConfidence + '%';
+        }
+
+        // Check for threats
+        async function checkThreats(predictions) {
+            const threats = predictions.filter(p => 
+                ['person', 'drone', 'airplane', 'bird', 'car', 'truck', 'motorcycle'].includes(p.class) && p.score > 0.7
+            );
+
+            if (threats.length > 0) {
+                const maxThreat = threats.reduce((max, t) => t.score > max.score ? t : max);
+                const severity = maxThreat.score > 0.85 ? 'HIGH' : 'MEDIUM';
+                maxThreat.severity = severity;
+                
+                updateThreatLevel(severity);
+                
+                // Add threat marker to map
+                addThreatMarker(maxThreat);
+                
+                // Broadcast to IoT system
+                iotManager.broadcastAlert('threat_detected', maxThreat, severity.toLowerCase());
+                
+                // Send mobile notification with snapshot
+                if (mobileNotifier.isEnabled) {
+                    const snapshot = await mobileNotifier.captureSnapshot(videoElement);
+                    await mobileNotifier.sendThreatAlert(maxThreat, snapshot);
+                }
+            } else {
+                updateThreatLevel('LOW');
+            }
+        }
+
+        // Update threat level display
+        function updateThreatLevel(severity) {
+            const threatLevel = document.getElementById('threatLevel');
+            threatLevel.className = 'threat-level threat-' + severity.toLowerCase();
+            threatLevel.innerHTML = `<i class="fas fa-shield-alt"></i> THREAT: ${severity}`;
+        }
+
+        // Update model info
+        function updateModelInfo() {
+            const info = mlModel.getModelInfo();
+            const stats = mlModel.getStatistics();
+            
+            document.getElementById('activeModel').textContent = 'COCO-SSD';
+            document.getElementById('historySize').textContent = info.detectionHistorySize;
+            document.getElementById('mostDetected').textContent = stats.mostCommonClass || 'N/A';
+        }
+
+        // Sliders
+        document.getElementById('thresholdSlider').addEventListener('input', (e) => {
+            const value = e.target.value;
+            document.getElementById('thresholdValue').textContent = value + '%';
+            mlModel.setConfidenceThreshold(value / 100);
+        });
+
+        document.getElementById('fpsSlider').addEventListener('input', (e) => {
+            const value = e.target.value;
+            document.getElementById('fpsValue').textContent = value + ' FPS';
+            
+            if (isDetecting) {
+                stopDetection();
+                setTimeout(() => {
+                    document.getElementById('startBtn').click();
+                }, 100);
+            }
+        });
+
+        document.getElementById('nmsSlider').addEventListener('input', (e) => {
+            const value = e.target.value;
+            document.getElementById('nmsValue').textContent = value + '%';
+            mlModel.setNMSThreshold(value / 100);
+        });
+
+        // Snapshot
+        document.getElementById('snapshotBtn').addEventListener('click', () => {
+            videoManager.captureSnapshot('main-camera', videoElement);
+            showNotification('Snapshot captured', 'success');
+        });
+
+        // Export data
+        function exportData() {
+            mlModel.exportDetectionData();
+            showNotification('Detection data exported', 'success');
+        }
+
+        // FPS counter
+        let lastTime = Date.now();
+        let frameCount = 0;
+
+        function updateFPS() {
+            frameCount++;
+            const now = Date.now();
+            const elapsed = now - lastTime;
+            
+            if (elapsed >= 1000) {
+                const fps = Math.round(frameCount / (elapsed / 1000));
+                document.getElementById('fpsDisplay').textContent = fps;
+                frameCount = 0;
+                lastTime = now;
+            }
+        }
+
+        // Notification system
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                padding: 15px 20px;
+                background: ${type === 'success' ? '#00aa44' : type === 'error' ? '#ff4444' : '#4488ff'};
+                color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                animation: slideIn 0.3s ease;
+            `;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Update model info periodically
+        setInterval(() => {
+            if (isDetecting) {
+                updateModelInfo();
+            }
+        }, 5000);
+
+        // Mobile notification functions
+        function openMobileSettings() {
+            const email = prompt('Enter your email address for alerts:');
+            const phone = prompt('Enter your phone number (with country code, e.g., +1234567890):');
+            
+            if (email || phone) {
+                mobileNotifier.initialize({
+                    email: email,
+                    phone: phone,
+                    enableEmail: !!email,
+                    enableSMS: !!phone,
+                    enablePush: true,
+                    enableWebSocket: false
+                });
+                
+                updateMobileStatus();
+                showNotification('Mobile alerts configured successfully!', 'success');
+            }
+        }
+
+        function testMobileAlert() {
+            if (!mobileNotifier.isEnabled) {
+                showNotification('Please configure mobile alerts first', 'error');
+                openMobileSettings();
+                return;
+            }
+            
+            mobileNotifier.testNotification();
+        }
+
+        function updateMobileStatus() {
+            const status = mobileNotifier.getStatus();
+            document.getElementById('alertStatus').textContent = status.enabled ? 'Active' : 'Inactive';
+            
+            const methods = [];
+            if (status.methods.email) methods.push('Email');
+            if (status.methods.sms) methods.push('SMS');
+            if (status.methods.push) methods.push('Push');
+            if (status.methods.websocket) methods.push('WebSocket');
+            
+            document.getElementById('alertMethods').textContent = methods.length > 0 ? methods.join(', ') : 'None';
+        }
+
+        // Unique Features Functions
+        function toggleVoiceAlerts() {
+            voiceEnabled = !voiceEnabled;
+            document.getElementById('voiceBtn').textContent = voiceEnabled ? 'Disable Voice Alerts' : 'Enable Voice Alerts';
+            
+            if (voiceEnabled) {
+                uniqueFeatures.speakAlert('Voice alerts enabled', 'normal');
+                showNotification('Voice alerts enabled', 'success');
+            } else {
+                showNotification('Voice alerts disabled', 'info');
+            }
+        }
+
+        async function toggleSoundDetection() {
+            if (!soundDetectionEnabled) {
+                const success = await uniqueFeatures.initializeSoundDetection();
+                if (success) {
+                    soundDetectionEnabled = true;
+                    document.getElementById('soundBtn').textContent = 'Disable Sound Detection';
+                    showNotification('Sound detection enabled', 'success');
+                } else {
+                    showNotification('Failed to enable sound detection', 'error');
+                }
+            } else {
+                soundDetectionEnabled = false;
+                document.getElementById('soundBtn').textContent = 'Enable Sound Detection';
+                showNotification('Sound detection disabled', 'info');
+            }
+        }
+
+        async function showWeather() {
+            const weather = await uniqueFeatures.fetchWeatherData(userLocation.lat, userLocation.lng);
+            if (weather) {
+                const threat = uniqueFeatures.assessWeatherThreat();
+                const message = `Weather: ${weather.temperature}°C, Wind: ${weather.windSpeed} km/h\nThreat Assessment: ${threat}`;
+                alert(message);
+                showNotification('Weather data updated', 'info');
+            } else {
+                showNotification('Failed to fetch weather data', 'error');
+            }
+        }
+
+        function showHeatmap() {
+            const heatmapData = uniqueFeatures.getHeatmapData();
+            
+            if (heatmapData.length === 0) {
+                showNotification('No heatmap data available yet', 'info');
+                return;
+            }
+
+            // Remove existing heatmap
+            if (heatmapLayer) {
+                liveMap.removeLayer(heatmapLayer);
+            }
+
+            // Create circles for heatmap visualization
+            heatmapData.forEach(point => {
+                const circle = L.circle([point.lat, point.lng], {
+                    color: point.intensity > 0.7 ? '#ff4444' : point.intensity > 0.4 ? '#ff8800' : '#ffaa00',
+                    fillColor: point.intensity > 0.7 ? '#ff4444' : point.intensity > 0.4 ? '#ff8800' : '#ffaa00',
+                    fillOpacity: point.intensity * 0.5,
+                    radius: 50
+                }).addTo(liveMap);
+            });
+
+            showNotification(`Heatmap displayed: ${heatmapData.length} threat zones`, 'success');
+        }
+
+        function showStatistics() {
+            const stats = uniqueFeatures.getStatistics();
+            const message = `
+System Statistics:
+━━━━━━━━━━━━━━━━━━━━━━
+📊 Heatmap Points: ${stats.heatmapPoints}
+🎯 Tracked Threats: ${stats.trackedThreats}
+👤 Whitelisted Faces: ${stats.whitelistedFaces}
+🎥 Recorded Clips: ${stats.recordedClips}
+🚨 Perimeter Breaches: ${stats.perimeterBreaches}
+🤖 AI Accuracy: ${stats.aiAccuracy}
+            `;
+            alert(message);
+        }
+
+        // Initialize
+        initialize();
+        updateMobileStatus();
+    </script>
+</body>
+</html>
