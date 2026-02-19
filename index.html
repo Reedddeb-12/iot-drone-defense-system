@@ -461,6 +461,14 @@
 
             <div class="control-section">
                 <h3><i class="fas fa-star"></i> Unique Features</h3>
+                <div style="background: rgba(255, 136, 0, 0.1); border: 1px solid #ff8800; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+                    <p style="margin: 0; color: #ff8800; font-weight: bold;">
+                        <i class="fas fa-fire"></i> Threat Heatmap: ACTIVE
+                    </p>
+                    <p style="margin: 5px 0 0 0; font-size: 0.85rem; color: #ffaa00;">
+                        Collecting threat location data in real-time
+                    </p>
+                </div>
                 <button class="btn btn-secondary" onclick="toggleVoiceAlerts()">
                     <i class="fas fa-volume-up"></i> <span id="voiceBtn">Enable Voice Alerts</span>
                 </button>
@@ -470,26 +478,33 @@
                 <button class="btn btn-secondary" onclick="showWeather()">
                     <i class="fas fa-cloud-sun"></i> Check Weather Threat
                 </button>
-                <button class="btn btn-secondary" onclick="showHeatmap()">
+                <button class="btn btn-secondary" onclick="showHeatmap()" id="heatmapBtn">
                     <i class="fas fa-fire"></i> Show Threat Heatmap
+                </button>
+                <button class="btn btn-secondary" onclick="clearHeatmap()">
+                    <i class="fas fa-eraser"></i> Clear Heatmap
                 </button>
                 <button class="btn btn-secondary" onclick="showStatistics()">
                     <i class="fas fa-chart-pie"></i> View Statistics
                 </button>
+                <div style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; font-size: 0.85rem;">
+                    <p><strong>Heatmap Points:</strong> <span id="heatmapCount">0</span></p>
+                    <p><strong>Last Updated:</strong> <span id="heatmapTime">Never</span></p>
+                </div>
             </div>
 
             <div class="control-section">
                 <h3><i class="fas fa-envelope"></i> Email Alerts</h3>
                 <div style="background: rgba(0, 255, 136, 0.1); border: 1px solid #00ff88; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
                     <p style="margin: 0; color: #00ff88; font-weight: bold;">
-                        <i class="fas fa-check-circle"></i> Auto Email Alerts: ACTIVE
+                        <i class="fas fa-check-circle"></i> Auto Email Alerts
                     </p>
                     <p style="margin: 5px 0 0 0; font-size: 0.85rem; color: #a0c4a0;">
                         Each unique threat detected once, then looks for new threats
                     </p>
                 </div>
-                <button class="btn btn-secondary" onclick="openMobileSettings()">
-                    <i class="fas fa-cog"></i> Configure Email Address
+                <button class="btn btn-primary" onclick="openMobileSettings()" style="background: linear-gradient(45deg, #00ff88, #00aa44);">
+                    <i class="fas fa-envelope"></i> Set Email Address
                 </button>
                 <button class="btn btn-secondary" onclick="testMobileAlert()">
                     <i class="fas fa-paper-plane"></i> Test Email Alert
@@ -621,22 +636,33 @@
                 showNotification('Failed to load detection models', 'error');
             }
 
-            // Auto-enable email alerts from config
-            if (CONFIG.email.autoSendAlerts) {
-                mobileNotifier.initialize({
-                    email: CONFIG.email.defaultRecipient,
-                    phone: '',
-                    enableEmail: true,
-                    enableSMS: false,
-                    enablePush: CONFIG.push.enabled,
-                    enableWebSocket: false
-                });
-                
-                // Set cooldown from config
-                mobileNotifier.setCooldownPeriod(CONFIG.email.cooldownPeriod);
-                
-                showNotification('✉️ Auto email alerts enabled: ' + CONFIG.email.defaultRecipient, 'success');
-                updateMobileStatus();
+            // Check if email is configured
+            let userEmail = localStorage.getItem('userEmail') || CONFIG.email.defaultRecipient;
+            
+            // If no email configured, prompt user
+            if (!userEmail) {
+                showNotification('⚠️ Please configure your email address for alerts', 'info');
+                setTimeout(() => {
+                    openMobileSettings();
+                }, 1000);
+            } else {
+                // Auto-enable email alerts from config
+                if (CONFIG.email.autoSendAlerts) {
+                    mobileNotifier.initialize({
+                        email: userEmail,
+                        phone: '',
+                        enableEmail: true,
+                        enableSMS: false,
+                        enablePush: CONFIG.push.enabled,
+                        enableWebSocket: false
+                    });
+                    
+                    // Set cooldown from config
+                    mobileNotifier.setCooldownPeriod(CONFIG.email.cooldownPeriod);
+                    
+                    showNotification('✉️ Auto email alerts enabled: ' + userEmail, 'success');
+                    updateMobileStatus();
+                }
             }
 
             // Initialize map
@@ -912,6 +938,14 @@
                 // Add threat marker to map
                 addThreatMarker(maxThreat);
                 
+                // Add to heatmap
+                const threatLat = userLocation.lat + (Math.random() - 0.5) * 0.002;
+                const threatLng = userLocation.lng + (Math.random() - 0.5) * 0.002;
+                uniqueFeatures.addToHeatmap(
+                    { lat: threatLat, lng: threatLng },
+                    severity
+                );
+                
                 // Broadcast to IoT system
                 iotManager.broadcastAlert('threat_detected', maxThreat, severity.toLowerCase());
                 
@@ -1045,16 +1079,43 @@
             if (isDetecting) {
                 updateModelInfo();
                 updateMobileStatus(); // Update alerted count
+                updateHeatmapInfo(); // Update heatmap info
             }
         }, 5000);
 
+        // Update heatmap info
+        function updateHeatmapInfo() {
+            const heatmapData = uniqueFeatures.getHeatmapData();
+            document.getElementById('heatmapCount').textContent = heatmapData.length;
+            
+            if (heatmapData.length > 0) {
+                const lastPoint = heatmapData[heatmapData.length - 1];
+                const timeAgo = Math.round((Date.now() - lastPoint.timestamp) / 1000);
+                document.getElementById('heatmapTime').textContent = timeAgo < 60 
+                    ? `${timeAgo}s ago` 
+                    : `${Math.round(timeAgo / 60)}m ago`;
+            } else {
+                document.getElementById('heatmapTime').textContent = 'Never';
+            }
+        }
+
         // Mobile notification functions
         function openMobileSettings() {
-            const currentEmail = mobileNotifier.userContacts.email || 'reeddhijitdeb@gmail.com';
+            const currentEmail = localStorage.getItem('userEmail') || mobileNotifier.userContacts.email || '';
             
-            const email = prompt('Enter your email address for alerts:', currentEmail);
+            const email = prompt('Enter your email address for threat alerts:', currentEmail);
             
             if (email) {
+                // Validate email format
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email)) {
+                    showNotification('Invalid email format. Please try again.', 'error');
+                    return;
+                }
+                
+                // Save to localStorage
+                localStorage.setItem('userEmail', email);
+                
                 mobileNotifier.initialize({
                     email: email,
                     phone: '',
@@ -1065,7 +1126,7 @@
                 });
                 
                 updateMobileStatus();
-                showNotification('Email alerts configured successfully!', 'success');
+                showNotification('✉️ Email alerts configured: ' + email, 'success');
             }
         }
 
@@ -1088,7 +1149,9 @@
 
         function updateMobileStatus() {
             const status = mobileNotifier.getStatus();
-            document.getElementById('alertStatus').textContent = status.enabled ? 'Active ✓' : 'Inactive';
+            const userEmail = localStorage.getItem('userEmail');
+            
+            document.getElementById('alertStatus').textContent = status.enabled ? 'Active ✓' : 'Not Configured';
             document.getElementById('alertStatus').style.color = status.enabled ? '#00ff88' : '#ff4444';
             
             const methods = [];
@@ -1098,9 +1161,8 @@
             document.getElementById('alertMethods').textContent = methods.length > 0 ? methods.join(', ') : 'None';
             
             // Show email address
-            if (mobileNotifier.userContacts.email) {
-                const emailDisplay = mobileNotifier.userContacts.email;
-                document.getElementById('alertMethods').textContent += ' (' + emailDisplay + ')';
+            if (userEmail) {
+                document.getElementById('alertMethods').textContent += ' (' + userEmail + ')';
             }
             
             // Show alerted threats count
@@ -1154,26 +1216,71 @@
             const heatmapData = uniqueFeatures.getHeatmapData();
             
             if (heatmapData.length === 0) {
-                showNotification('No heatmap data available yet', 'info');
+                showNotification('No heatmap data available yet. Start detection to collect data.', 'info');
                 return;
             }
 
-            // Remove existing heatmap
-            if (heatmapLayer) {
-                liveMap.removeLayer(heatmapLayer);
+            // Remove existing heatmap layers
+            if (window.heatmapCircles) {
+                window.heatmapCircles.forEach(circle => liveMap.removeLayer(circle));
             }
+            window.heatmapCircles = [];
 
             // Create circles for heatmap visualization
             heatmapData.forEach(point => {
+                // Color based on intensity
+                let color, label;
+                if (point.intensity > 0.8) {
+                    color = '#ff0000'; // Critical - Red
+                    label = 'CRITICAL';
+                } else if (point.intensity > 0.6) {
+                    color = '#ff4444'; // High - Orange-Red
+                    label = 'HIGH';
+                } else if (point.intensity > 0.4) {
+                    color = '#ff8800'; // Medium - Orange
+                    label = 'MEDIUM';
+                } else {
+                    color = '#ffaa00'; // Low - Yellow
+                    label = 'LOW';
+                }
+                
                 const circle = L.circle([point.lat, point.lng], {
-                    color: point.intensity > 0.7 ? '#ff4444' : point.intensity > 0.4 ? '#ff8800' : '#ffaa00',
-                    fillColor: point.intensity > 0.7 ? '#ff4444' : point.intensity > 0.4 ? '#ff8800' : '#ffaa00',
-                    fillOpacity: point.intensity * 0.5,
-                    radius: 50
+                    color: color,
+                    fillColor: color,
+                    fillOpacity: point.intensity * 0.6,
+                    radius: 30 + (point.intensity * 50), // Size based on intensity
+                    weight: 2
                 }).addTo(liveMap);
+                
+                // Add popup with info
+                const timeAgo = Math.round((Date.now() - point.timestamp) / 60000); // minutes ago
+                circle.bindPopup(`
+                    <div style="color: #1a472a;">
+                        <h4 style="color: ${color}; margin: 0 0 5px 0;">🔥 Threat Zone</h4>
+                        <p style="margin: 3px 0;"><strong>Intensity:</strong> ${label}</p>
+                        <p style="margin: 3px 0;"><strong>Time:</strong> ${timeAgo} min ago</p>
+                        <p style="margin: 3px 0;"><strong>Level:</strong> ${(point.intensity * 100).toFixed(0)}%</p>
+                    </div>
+                `);
+                
+                window.heatmapCircles.push(circle);
             });
 
-            showNotification(`Heatmap displayed: ${heatmapData.length} threat zones`, 'success');
+            // Pan to show heatmap
+            if (heatmapData.length > 0) {
+                const bounds = L.latLngBounds(heatmapData.map(p => [p.lat, p.lng]));
+                liveMap.fitBounds(bounds, { padding: [50, 50] });
+            }
+
+            showNotification(`🔥 Heatmap displayed: ${heatmapData.length} threat zones`, 'success');
+        }
+
+        function clearHeatmap() {
+            if (window.heatmapCircles) {
+                window.heatmapCircles.forEach(circle => liveMap.removeLayer(circle));
+                window.heatmapCircles = [];
+            }
+            showNotification('Heatmap cleared', 'info');
         }
 
         function showStatistics() {

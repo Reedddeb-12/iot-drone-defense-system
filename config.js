@@ -2,8 +2,8 @@
 const CONFIG = {
     // Email Alert Configuration
     email: {
-        // Change this to your email address
-        defaultRecipient: 'reeddhijitdeb@gmail.com',
+        // Email will be entered by user on first use
+        defaultRecipient: '',  // Leave empty for user entry
         
         // Alert cooldown period (milliseconds)
         // 60000 = 1 minute between alerts
@@ -89,7 +89,10 @@ const CONFIG = {
     
     // Backend Server
     server: {
-        url: 'http://localhost:3000',
+        // Will be auto-detected based on where you access from
+        // Use localhost when on same computer
+        // Use network IP (e.g., 192.168.x.x) when on different device
+        url: window.location.origin,  // Auto-detect
         endpoints: {
             email: '/api/send-email'
         }

@@ -235,8 +235,9 @@ class MobileNotificationSystem {
 </html>
             `;
 
-            // Call backend API
-            const response = await fetch('http://localhost:3000/api/send-email', {
+            // Call backend API (use dynamic URL)
+            const serverUrl = CONFIG?.server?.url || window.location.origin;
+            const response = await fetch(`${serverUrl}/api/send-email`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

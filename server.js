@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const path = require('path');
+const os = require('os');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,6 +14,20 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('.'));
+
+// Get local IP address
+function getLocalIPAddress() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            // Skip internal and non-IPv4 addresses
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return 'localhost';
+}
 
 // Configuration (Replace with your actual credentials)
 const CONFIG = {
@@ -121,13 +136,17 @@ app.get('/api/health', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
+    const localIP = getLocalIPAddress();
     console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║   Drone Defense System - Email Alert Server               ║
 ╚════════════════════════════════════════════════════════════╝
 
-Server running on: http://localhost:${PORT}
+Server running on:
+  Local:    http://localhost:${PORT}
+  Network:  http://${localIP}:${PORT}
+
 API Endpoints:
   - GET  /api/test        - Test server
   - GET  /api/health      - Health check
@@ -136,7 +155,10 @@ API Endpoints:
 Configuration Status:
   Email: ${CONFIG.email.user !== 'your-email@gmail.com' ? '✓ Configured' : '✗ Not configured'}
 
-⚠️  IMPORTANT: Update email credentials in server.js or use environment variables
+⚠️  IMPORTANT: 
+  - Update email credentials in server.js or use environment variables
+  - To access from other devices, use: http://${localIP}:${PORT}
+  - Make sure firewall allows port ${PORT}
     `);
 });
 
