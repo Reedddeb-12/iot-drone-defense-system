@@ -22,8 +22,8 @@ const CONFIG = {
     // Email Configuration (Gmail example)
     email: {
         service: 'gmail',
-        user: process.env.EMAIL_USER || 'your-email@gmail.com',
-        password: process.env.EMAIL_PASSWORD || 'your-app-password'
+        user: process.env.EMAIL_USER || 'reeddhijitdeb@gmail.com',
+        password: process.env.EMAIL_PASSWORD || 'xxvypgyhkyxdhasy'
     },
     
     // Twilio Configuration for SMS
@@ -43,8 +43,18 @@ const emailTransporter = nodemailer.createTransport({
     }
 });
 
-// Initialize Twilio client
-const twilioClient = twilio(CONFIG.twilio.accountSid, CONFIG.twilio.authToken);
+// Initialize Twilio client (optional)
+let twilioClient = null;
+if (CONFIG.twilio.accountSid && CONFIG.twilio.accountSid.startsWith('AC')) {
+    try {
+        twilioClient = twilio(CONFIG.twilio.accountSid, CONFIG.twilio.authToken);
+        console.log('✅ Twilio SMS enabled');
+    } catch (error) {
+        console.warn('⚠️ Twilio not configured - SMS alerts disabled');
+    }
+} else {
+    console.warn('⚠️ Twilio not configured - SMS alerts disabled');
+}
 
 // Test endpoint
 app.get('/api/test', (req, res) => {
@@ -131,6 +141,13 @@ app.post('/api/send-sms', async (req, res) => {
             return res.status(400).json({ 
                 success: false, 
                 error: 'Missing required fields' 
+            });
+        }
+
+        if (!twilioClient) {
+            return res.status(503).json({ 
+                success: false, 
+                error: 'SMS service not configured. Please add Twilio credentials.' 
             });
         }
 
