@@ -60,6 +60,38 @@ class MobileNotificationSystem {
         return false;
     }
 
+    // Calculate threat level based on object type and confidence
+    calculateThreatLevel(threatClass, confidence) {
+        const highThreatObjects = ['person', 'knife', 'scissors', 'bottle', 'cell phone', 'backpack'];
+        const mediumThreatObjects = ['car', 'truck', 'motorcycle', 'bicycle', 'dog', 'cat'];
+        
+        let level = 'LOW';
+        let color = '#00ff88';
+        let emoji = '⚠️';
+        
+        if (highThreatObjects.includes(threatClass.toLowerCase())) {
+            if (confidence >= 0.8) {
+                level = 'CRITICAL';
+                color = '#ff0000';
+                emoji = '🚨';
+            } else if (confidence >= 0.6) {
+                level = 'HIGH';
+                color = '#ff6600';
+                emoji = '⚠️';
+            } else {
+                level = 'MEDIUM';
+                color = '#ffaa00';
+                emoji = '⚡';
+            }
+        } else if (mediumThreatObjects.includes(threatClass.toLowerCase())) {
+            level = confidence >= 0.7 ? 'MEDIUM' : 'LOW';
+            color = confidence >= 0.7 ? '#ffaa00' : '#00ff88';
+            emoji = confidence >= 0.7 ? '⚡' : 'ℹ️';
+        }
+        
+        return { level, color, emoji };
+    }
+
     // Send threat alert with snapshot
     async sendThreatAlert(threat, snapshotBlob) {
         // Check cooldown period
@@ -76,11 +108,15 @@ class MobileNotificationSystem {
 
         this.lastAlertTime = now;
 
+        const threatLevel = this.calculateThreatLevel(threat.class, threat.score);
+
         const alertData = {
             timestamp: new Date().toISOString(),
             threatType: threat.class,
             confidence: Math.round(threat.score * 100),
-            severity: threat.severity || 'MEDIUM',
+            severity: threatLevel.level,
+            severityColor: threatLevel.color,
+            severityEmoji: threatLevel.emoji,
             location: 'Camera Feed',
             snapshot: snapshotBlob
         };
@@ -130,20 +166,73 @@ class MobileNotificationSystem {
             // Convert blob to base64
             const base64Image = await this.blobToDataURL(alertData.snapshot);
 
-            const subject = `🚨 THREAT ALERT: ${alertData.threatType.toUpperCase()} Detected`;
-            const body = `
-THREAT DETECTION ALERT
-
-Time: ${new Date(alertData.timestamp).toLocaleString()}
-Threat Type: ${alertData.threatType}
-Confidence: ${alertData.confidence}%
-Severity: ${alertData.severity}
-Location: ${alertData.location}
-
-A snapshot has been attached to this email.
-Please review immediately.
-
-- Drone Defense System
+            const subject = `${alertData.severityEmoji} ${alertData.severity} THREAT: ${alertData.threatType.toUpperCase()} Detected`;
+            const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; background: #0a0f0a; color: #00ff88; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #1a472a; border: 2px solid ${alertData.severityColor}; border-radius: 10px; padding: 20px; }
+        .header { text-align: center; padding: 20px; background: ${alertData.severityColor}; color: white; border-radius: 5px; margin-bottom: 20px; }
+        .threat-level { font-size: 32px; font-weight: bold; margin: 10px 0; }
+        .details { background: #0a0f0a; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .detail-row { padding: 8px 0; border-bottom: 1px solid #1a472a; }
+        .label { color: #00ff88; font-weight: bold; }
+        .value { color: white; float: right; }
+        .snapshot { text-align: center; margin: 20px 0; }
+        .snapshot img { max-width: 100%; border: 2px solid ${alertData.severityColor}; border-radius: 5px; }
+        .footer { text-align: center; color: #666; margin-top: 20px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div style="font-size: 48px;">${alertData.severityEmoji}</div>
+            <div class="threat-level">${alertData.severity} THREAT ALERT</div>
+            <div>${alertData.threatType.toUpperCase()} DETECTED</div>
+        </div>
+        
+        <div class="details">
+            <div class="detail-row">
+                <span class="label">Time:</span>
+                <span class="value">${new Date(alertData.timestamp).toLocaleString()}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Threat Type:</span>
+                <span class="value">${alertData.threatType}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Confidence:</span>
+                <span class="value">${alertData.confidence}%</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Threat Level:</span>
+                <span class="value" style="color: ${alertData.severityColor};">${alertData.severity}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Location:</span>
+                <span class="value">${alertData.location}</span>
+            </div>
+        </div>
+        
+        <div class="snapshot">
+            <h3 style="color: ${alertData.severityColor};">Threat Snapshot</h3>
+            <img src="cid:threat-snapshot" alt="Threat Detection Snapshot" />
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px; padding: 15px; background: #0a0f0a; border-radius: 5px;">
+            <p style="color: ${alertData.severityColor}; font-weight: bold; margin: 0;">⚠️ IMMEDIATE ACTION REQUIRED</p>
+            <p style="color: white; margin: 10px 0;">Please review this threat detection immediately and take appropriate action.</p>
+        </div>
+        
+        <div class="footer">
+            <p>IoT Drone Defense System - Automated Threat Detection</p>
+            <p>This is an automated alert. Do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>
             `;
 
             // Call backend API
@@ -153,8 +242,9 @@ Please review immediately.
                 body: JSON.stringify({
                     to: this.userContacts.email,
                     subject: subject,
-                    body: body,
-                    snapshot: base64Image
+                    html: htmlBody,
+                    snapshot: base64Image,
+                    threatLevel: alertData.severity
                 })
             });
 
@@ -185,7 +275,7 @@ Please review immediately.
         }
 
         try {
-            const message = `🚨 THREAT ALERT: ${alertData.threatType} detected with ${alertData.confidence}% confidence at ${new Date(alertData.timestamp).toLocaleTimeString()}. Check your email for snapshot.`;
+            const message = `${alertData.severityEmoji} ${alertData.severity} THREAT: ${alertData.threatType} detected (${alertData.confidence}% confidence) at ${new Date(alertData.timestamp).toLocaleTimeString()}. Check email for image.`;
 
             // Call backend API
             const response = await fetch('http://localhost:3000/api/send-sms', {
@@ -232,8 +322,8 @@ Please review immediately.
             // Create notification with image
             const imageUrl = await this.blobToDataURL(alertData.snapshot);
 
-            const notification = new Notification('🚨 Threat Detected!', {
-                body: `${alertData.threatType} detected with ${alertData.confidence}% confidence`,
+            const notification = new Notification(`${alertData.severityEmoji} ${alertData.severity} Threat Detected!`, {
+                body: `${alertData.threatType} detected with ${alertData.confidence}% confidence - Threat Level: ${alertData.severity}`,
                 icon: imageUrl,
                 image: imageUrl,
                 badge: imageUrl,

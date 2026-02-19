@@ -57,29 +57,39 @@ app.get('/api/test', (req, res) => {
 // Send Email Alert
 app.post('/api/send-email', async (req, res) => {
     try {
-        const { to, subject, body, snapshot } = req.body;
+        const { to, subject, html, body, snapshot, threatLevel } = req.body;
 
-        if (!to || !subject || !body) {
+        if (!to || !subject) {
             return res.status(400).json({ 
                 success: false, 
                 error: 'Missing required fields' 
             });
         }
 
+        // Determine threat level color
+        const threatColors = {
+            'CRITICAL': '#ff0000',
+            'HIGH': '#ff6600',
+            'MEDIUM': '#ffaa00',
+            'LOW': '#00ff88'
+        };
+        const levelColor = threatColors[threatLevel] || '#ffaa00';
+
         // Prepare email with snapshot attachment
         const mailOptions = {
-            from: CONFIG.email.user,
+            from: `"🚁 Drone Defense System" <${CONFIG.email.user}>`,
             to: to,
             subject: subject,
-            text: body,
-            html: `
+            text: body || 'Threat detected - see HTML version',
+            html: html || `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <div style="background: linear-gradient(135deg, #1a472a, #2d5a3d); padding: 20px; border-radius: 10px 10px 0 0;">
                         <h1 style="color: #00ff88; margin: 0;">🚨 THREAT ALERT</h1>
+                        ${threatLevel ? `<h2 style="color: ${levelColor}; margin: 10px 0;">${threatLevel} THREAT</h2>` : ''}
                     </div>
                     <div style="background: #f5f5f5; padding: 20px; border-radius: 0 0 10px 10px;">
-                        <pre style="background: white; padding: 15px; border-radius: 5px; border-left: 4px solid #ff4444;">${body}</pre>
-                        ${snapshot ? '<h3>Threat Snapshot:</h3><img src="cid:snapshot" style="max-width: 100%; border-radius: 5px; border: 2px solid #1a472a;" />' : ''}
+                        <pre style="background: white; padding: 15px; border-radius: 5px; border-left: 4px solid ${levelColor};">${body || 'Threat detected'}</pre>
+                        ${snapshot ? '<h3>Threat Snapshot:</h3><img src="cid:threat-snapshot" style="max-width: 100%; border-radius: 5px; border: 2px solid ' + levelColor + ';" />' : ''}
                         <p style="color: #666; font-size: 12px; margin-top: 20px;">
                             This is an automated alert from your Drone Defense System.
                         </p>
@@ -87,10 +97,10 @@ app.post('/api/send-email', async (req, res) => {
                 </div>
             `,
             attachments: snapshot ? [{
-                filename: 'threat-snapshot.jpg',
-                content: snapshot.split(',')[1],
+                filename: `threat-${Date.now()}.jpg`,
+                content: snapshot.split(',')[1] || snapshot,
                 encoding: 'base64',
-                cid: 'snapshot'
+                cid: 'threat-snapshot'
             }] : []
         };
 
